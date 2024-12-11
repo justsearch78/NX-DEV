@@ -1,91 +1,63 @@
 pipeline {
-    agent any
-    
-    environment {
-        DOCKER_REGISTRY = 'localhost:5000'
-        PROJECT_NAME = 'main'
-        GIT_REPO = 'https://github.com/justsearch78/NX-DEV.git'
-    }
-    
-    stages {
-        stage('Checkout') {
-            steps {
-                git branch: 'main', url: "${GIT_REPO}"
-            }
+    agent {
+        docker {
+            image 'ubuntu:22.04'
+            args '-u root'
         }
-        
-        stage('Prepare Build Environment') {
+    }
+
+    environment {
+        CONAN_USER_HOME = "${WORKSPACE}"
+    }
+
+    stages {
+        stage('Prepare') {
             steps {
                 sh '''
-                mkdir -p build
-                which cmake || sudo dnf install -y cmake
-                which gcc || sudo dnf install -y gcc-c++
+                    apt-get update
+                    apt-get install -y build-essential cmake python3-pip git wget
+                    pip3 install conan
                 '''
             }
         }
-        
+
+        stage('Dependency Install') {
+            steps {
+                sh '''
+                    conan profile detect
+                    conan install . --output-folder=build --build=missing
+                '''
+            }
+        }
+
         stage('Build') {
             steps {
                 sh '''
-                cd build
-                cmake ..
-                cmake --build .
+                    cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
+                    cmake --build build --config Release
                 '''
             }
         }
-        
+
         stage('Test') {
             steps {
-                sh '''
-                cd build
-                ./hello_world
-                '''
+                sh 'cd build && ctest --output-on-failure'
             }
         }
-        
+
         stage('Docker Build') {
             steps {
                 script {
-                    def dockerImage = docker.build("${DOCKER_REGISTRY}/${PROJECT_NAME}:${BUILD_NUMBER}")
-                }
-            }
-        }
-        
-        stage('Push to Registry') {
-            steps {
-                script {
-                    docker.withRegistry('http://localhost:5000') {
-                        docker.image("${DOCKER_REGISTRY}/${PROJECT_NAME}:${BUILD_NUMBER}").push()
-                        docker.image("${DOCKER_REGISTRY}/${PROJECT_NAME}:${BUILD_NUMBER}").push('latest')
-                    }
-                }
-            }
-        }
-        
-        stage('Deploy to Kubernetes') {
-            steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBE_CONFIG')]) {
-                    sh """
-                    sed -i 's|image: localhost:5000/main:latest|image: ${DOCKER_REGISTRY}/${PROJECT_NAME}:${BUILD_NUMBER}|g' deploy/deployment.yaml
-                    
-                    kubectl --kubeconfig=${KUBE_CONFIG} apply -f deploy/
-                    kubectl --kubeconfig=${KUBE_CONFIG} rollout status deployment/${PROJECT_NAME}
-                    """
+                    docker.build('my-cpp-project:${BUILD_NUMBER}')
                 }
             }
         }
     }
-    
+
     post {
         always {
-            cleanWs()
-        }
-        success {
-            echo 'Pipeline completed successfully!'
-        }
-        failure {
-            echo 'Pipeline failed. Check logs for details.'
+            junit 'build/test_results/*.xml'
+            archiveArtifacts 'build/bin/*'
         }
     }
 }
-

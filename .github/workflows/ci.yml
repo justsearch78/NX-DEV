@@ -1,0 +1,155 @@
+name: C++ CI Workflow
+
+# Triggers on push and pull requests
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+# Environment variables
+env:
+  # Customize as needed
+  CMAKE_VERSION: 3.20.2
+  CPP_STANDARD: 17
+
+jobs:
+  build-and-test:
+    # Multiple OS support
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        compiler: 
+          - gcc
+          - clang
+        exclude:
+          - os: windows-latest
+            compiler: clang
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    # Checkout repository
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    # Setup build environment
+    - name: Setup Build Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    # Install system dependencies
+    - name: Install System Dependencies
+      run: |
+        if [ "${{ runner.os }}" == "Linux" ]; then
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libgtest-dev \
+            ninja-build \
+            ${{ matrix.compiler }}
+        elif [ "${{ runner.os }}" == "macOS" ]; then
+          brew install \
+            cmake \
+            ninja \
+            ${{ matrix.compiler }}
+        elif [ "${{ runner.os }}" == "Windows" ]; then
+          choco install cmake ninja
+        fi
+      shell: bash
+
+    # Install Conan for dependency management
+    - name: Install Conan
+      run: |
+        pip install conan
+        conan profile detect
+      shell: bash
+
+    # Configure Conan dependencies
+    - name: Install Project Dependencies
+      run: |
+        mkdir build
+        cd build
+        conan install .. \
+          --build=missing \
+          -s compiler.cppstd=${{ env.CPP_STANDARD }}
+      shell: bash
+
+    # CMake Configuration
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_STANDARD=${{ env.CPP_STANDARD }} \
+          -G Ninja
+      shell: bash
+
+    # Build Project
+    - name: Build Project
+      run: cmake --build build --config Release
+      shell: bash
+
+    # Run Tests
+    - name: Run Tests
+      run: |
+        cd build
+        ctest -C Release --output-on-failure
+      shell: bash
+
+    # Code Coverage (Optional, for Linux/GCC)
+    - name: Code Coverage
+      if: matrix.os == 'ubuntu-latest' && matrix.compiler == 'gcc'
+      run: |
+        pip install gcovr
+        cmake -B build -DCMAKE_BUILD_TYPE=Coverage
+        cmake --build build
+        gcovr -r . --xml coverage.xml
+
+    # Upload Coverage Report
+    - name: Upload Coverage
+      if: matrix.os == 'ubuntu-latest' && matrix.compiler == 'gcc'
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml
+        fail_ci_if_error: true
+
+  # Static Analysis Job
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    # Setup Clang Static Analyzer
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          clang-tools \
+          cppcheck
+
+    # Run Clang Static Analyzer
+    - name: Clang Static Analysis
+      run: |
+        clang-tidy src/**/*.cpp \
+          -checks='-*,performance-*,bugprone-*' \
+          -- -std=c++17
+
+    # Run Cppcheck
+    - name: Cppcheck
+      run: |
+        cppcheck src \
+          --enable=all \
+          --suppress=missingIncludeSystem \
+          --error-exitcode=1
+
+# Notification Configuration
+# Uncomment and configure as needed
+# notifications:
+#   email:
+#     recipients:
+#       - your-email@example.com
+#     on_success: change
+#     on_failure: always
