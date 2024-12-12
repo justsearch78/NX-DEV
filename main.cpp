@@ -1,8 +1,6 @@
-// Your First C++ Program
-
 #include <iostream>
 
 int main() {
-    std::cout << "Hello, Jenkins World!" << std::endl;
+    std::cout << "Hello, World from vcpkg Docker image!" << std::endl;
     return 0;
 }

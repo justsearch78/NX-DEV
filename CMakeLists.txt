@@ -1,27 +1,13 @@
-cmake_minimum_required(VERSION 3.15)
-project(MyC++Project VERSION 1.0)
+cmake_minimum_required(VERSION 3.10)
+project(HelloWorld)
 
-# Set C++ Standard
+# Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Add source files
-add_executable(${PROJECT_NAME} 
-    src/main.cpp 
-    src/utils.cpp
-)
+# Add executable
+add_executable(hello_world main.cpp)
 
-# Enable Testing
-enable_testing()
-add_subdirectory(tests)
-
-# Compiler Warnings
-if(MSVC)
-    add_compile_options(/W4)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-# Dependency Management with Conan
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup()
+# Optional: Find and link packages using vcpkg
+# find_package(fmt CONFIG REQUIRED)
+# target_link_libraries(hello_world PRIVATE fmt::fmt)
